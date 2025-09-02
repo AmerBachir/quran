@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>القرآن الكريم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Poppins', sans-serif;
+        background-color: #f8fafc; /* bg-slate-50 */
+        color: #1e293b; /* bg-slate-800 */
+      }
+      .font-arabic {
+        font-family: 'Noto Naskh Arabic', serif;
+      }
+      /* Custom scrollbar for better aesthetics */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #e2e8f0; /* bg-slate-200 */
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #10B981; /* bg-green-500 */
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #059669; /* bg-green-600 */
+      }
+      @keyframes highlight-bg {
+          0% { background-color: transparent; }
+          50% { background-color: rgba(16, 185, 129, 0.2); } /* bg-green-500/20 */
+          100% { background-color: transparent; }
+      }
+      .highlight-ayah {
+          animation: highlight-bg 2.5s ease-in-out;
+      }
+      /* Styles for Modal */
+      #modal-content::-webkit-scrollbar-track {
+        background: #f1f5f9; /* bg-slate-100 */
+      }
+      #modal-content::-webkit-scrollbar-thumb {
+        background: #10B981; /* bg-green-500 */
+      }
+      #modal-content::-webkit-scrollbar-thumb:hover {
+        background: #059669; /* bg-green-600 */
+      }
+      .tafsir-tabs button.active {
+        border-color: #10B981; /* border-green-500 */
+        color: #059669; /* text-green-600 */
+        background-color: rgba(16, 185, 129, 0.1);
+      }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app-container" class="container mx-auto max-w-4xl p-4 min-h-screen">
+        <!-- Loader will be shown here -->
+        <div id="loader" class="flex justify-center items-center h-screen">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-green-500"></div>
+        </div>
+        
+        <!-- App content will be injected here -->
+        <div id="app-content" class="hidden">
+            <!-- Header placeholder -->
+            <header id="app-header" class="p-4 text-center mb-6"></header>
+            
+            <!-- Main content placeholder -->
+            <main id="main-content"></main>
+            
+            <!-- Footer -->
+            <footer class="text-center p-4 mt-8 text-slate-500 text-sm">
+                <p>تم التطوير باستخدام واجهة برمجة تطبيقات alquran.cloud</p>
+            </footer>
+        </div>
+
+        <!-- Error message placeholder -->
+        <div id="error-message" class="hidden text-center text-red-600 mt-10 p-4 bg-red-100 rounded-lg"></div>
+    </div>
+
+    <!-- Ayah Detail Modal -->
+    <div id="modal-container" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300">
+        <div id="modal-overlay" class="fixed inset-0 bg-black/60"></div>
+        <div id="modal-content" class="relative bg-white text-slate-900 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-0">
+            <!-- Modal content will be injected here -->
+        </div>
+    </div>
+
+    <script type="module">
+        const API_BASE_URL = 'https://api.alquran.cloud/v1';
+
+        // --- DOM Elements ---
+        const loader = document.getElementById('loader');
+        const appContent = document.getElementById('app-content');
+        const appHeader = document.getElementById('app-header');
+        const mainContent = document.getElementById('main-content');
+        const errorMessage = document.getElementById('error-message');
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalContent = document.getElementById('modal-content');
+
+        // --- State Management ---
+        let state = {
+            surahs: [],
+            selectedSurahData: null,
+            playingAyahKey: null,
+            currentAyahInModal: null,
+            editions: {
+                audio: 'ar.alafasy',
+                tafsir: 'ar.muyassar',
+            },
+            reciters: [
+                { id: 'ar.alafasy', name: 'مشاري العفاسي' },
+                { id: 'ar.husary', name: 'محمود خليل الحصري' },
+                { id: 'ar.abdulbasitmurattal', name: 'عبد الباسط عبد الصمد' },
+                { id: 'ar.saoodshuraym', name: 'سعود الشريم' },
+                { id: 'ar.sudais', name: 'عبدالرحمن السديس' },
+            ],
+            tafsirs: [
+                { id: 'ar.muyassar', name: 'التفسير الميسر' },
+                { id: 'ar.jalalayn', name: 'تفسير الجلالين' },
+            ]
+        };
+        const audioPlayer = new Audio();
+
+        // --- Icons ---
+        const ICONS = {
+            book: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 text-green-500"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6-2.292m0 0V21M12 6.042A8.967 8.967 0 0 1 18 3.75m-6 2.292V3.75m0 2.292L6 3.75m6 2.292" /></svg>`,
+            play: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" /></svg>`,
+            pause: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" /></svg>`,
+            back: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 transform scale-x-[-1]"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>`,
+            search: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>`,
+            close: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>`,
+            download: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>`,
+            share: {
+              facebook: `<svg fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2.04C6.5 2.04 2 6.53 2 12.06c0 5.07 3.66 9.27 8.44 9.94v-7.02H7.97v-2.91h2.47V9.6c0-2.45 1.45-3.8 3.65-3.8 1.06 0 2.16.2 2.16.2v2.47h-1.26c-1.2 0-1.56.72-1.56 1.5v1.83h2.78l-.45 2.9h-2.33v7.02c4.78-.67 8.44-4.87 8.44-9.94C22 6.53 17.5 2.04 12 2.04Z"/></svg>`,
+              x: `<svg fill="#000000" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+              whatsapp: `<svg fill="#25D366" viewBox="0 0 24 24"><path d="M19.11 4.91C17.22 3 14.72 2 12.01 2c-5.48 0-9.91 4.43-9.91 9.91 0 1.75.46 3.42 1.29 4.89L2 22l5.25-1.38c1.41.79 3.01 1.25 4.76 1.25 5.48 0 9.91-4.43 9.91-9.91 0-2.71-1-5.22-2.89-7.09zM12.01 20.55c-1.57 0-3.07-.46-4.36-1.29l-.3-.18-3.23.85.87-3.15-.2-.31c-.88-1.35-1.42-2.95-1.42-4.63 0-4.6 3.73-8.33 8.33-8.33 2.28 0 4.4.88 5.99 2.47 1.59 1.59 2.47 3.71 2.47 5.99-.01 4.6-3.74 8.33-8.33 8.33zm4.61-6.49c-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.54.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2s-1.35-1.52-1.51-1.78c-.16-.26-.08-.39.04-.51.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42s-.54-1.29-.74-1.77c-.2-.48-.4-.41-.54-.42-.14-.01-.3-.01-.46-.01s-.38.06-.58.3c-.2.24-.77.75-.77 1.82s.79 2.11.9 2.27c.12.16 1.55 2.35 3.76 3.32.53.24.94.38 1.26.49.32.11.61.1.84-.06.27-.18.12-1.03.09-1.15s-.09-.16-.2-.24z"/></svg>`,
+              telegram: `<svg fill="#2AABEE" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.69 7.61-1.43 6.71c-.15.7-.58.88-1.2.55l-2.22-1.62-1.08 1.04c-.12.12-.22.22-.44.22l.16-2.28 4.08-3.7c.18-.16-.04-.25-.3-.09l-5.04 3.15-2.18-.68c-.7-.22-.72-.7.15-1.04l8.32-3.23c.6-.23 1.1.15.94.86z"/></svg>`,
+            }
+        };
+
+        // --- UI State Functions ---
+        const showLoader = (show) => {
+            loader.style.display = show ? 'flex' : 'none';
+            appContent.style.display = show ? 'none' : 'block';
+        };
+
+        const showError = (message) => {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            appContent.style.display = 'none';
+            loader.style.display = 'none';
+        };
+
+        // --- API Service ---
+        const api = {
+            getAllSurahs: async () => {
+                const response = await fetch(`${API_BASE_URL}/surah`);
+                if (!response.ok) throw new Error('فشل في تحميل السور.');
+                const data = await response.json();
+                return data.data;
+            },
+            getSurahDetail: async (surahNumber, audioEdition) => {
+                const response = await fetch(`${API_BASE_URL}/surah/${surahNumber}/editions/quran-uthmani,${audioEdition}`);
+                if (!response.ok) throw new Error('فشل في تحميل بيانات السورة.');
+                const data = await response.json();
+                const [arabicData, audioData] = data.data;
+                const combinedAyahs = arabicData.ayahs.map((ayah, index) => ({
+                    ...ayah,
+                    text: ayah.text,
+                    audio: audioData.ayahs[index].audio,
+                }));
+                return {
+                    number: arabicData.number,
+                    name: arabicData.name,
+                    revelationType: arabicData.revelationType,
+                    ayahs: combinedAyahs,
+                };
+            },
+            getTafsir: async (surahNumber, ayahNumber, tafsirEdition) => {
+                const response = await fetch(`${API_BASE_URL}/ayah/${surahNumber}:${ayahNumber}/${tafsirEdition}`);
+                if (!response.ok) return "التفسير غير متوفر حالياً.";
+                const data = await response.json();
+                return data.data.text;
+            }
+        };
+
+        // --- Audio Player Logic ---
+        const handlePlayToggle = (audioUrl, ayahKey) => {
+            const allPlayButtons = document.querySelectorAll('.play-toggle-btn');
+            allPlayButtons.forEach(btn => {
+                 if(btn.dataset.ayahKey !== ayahKey) btn.innerHTML = ICONS.play;
+            });
+
+            if (state.playingAyahKey === ayahKey) {
+                audioPlayer.pause();
+                state.playingAyahKey = null;
+                 const currentBtn = document.querySelector(`[data-ayah-key="${ayahKey}"]`);
+                 if(currentBtn) currentBtn.innerHTML = ICONS.play;
+            } else {
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+                state.playingAyahKey = ayahKey;
+                const newPlayingButton = document.querySelector(`[data-ayah-key="${ayahKey}"]`);
+                if (newPlayingButton) newPlayingButton.innerHTML = ICONS.pause;
+            }
+        };
+
+        audioPlayer.onended = () => {
+            const endedButton = document.querySelector(`[data-ayah-key="${state.playingAyahKey}"]`);
+            if (endedButton) endedButton.innerHTML = ICONS.play;
+            state.playingAyahKey = null;
+        };
+        
+        // --- Rendering Logic ---
+        const renderSurahList = () => {
+            appHeader.innerHTML = `
+                <div class="flex justify-center items-center gap-4">
+                    ${ICONS.book}
+                    <h1 class="text-4xl font-bold font-arabic text-slate-900">القرآن الكريم</h1>
+                </div>
+                <p class="text-slate-500 mt-2">تصفح واستمع إلى سور القرآن الكريم</p>
+            `;
+            const surahCards = state.surahs.map(surah => `
+                <div data-surah-number="${surah.number}" class="surah-card bg-white rounded-lg p-4 flex items-center cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border border-slate-200">
+                    <div class="flex items-center gap-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-slate-100 text-green-600 flex items-center justify-center rounded-md font-bold text-sm">
+                            ${surah.number}
+                        </div>
+                        <div>
+                            <p class="font-arabic text-2xl text-slate-800">${surah.name}</p>
+                            <p class="text-sm text-slate-500">${surah.revelationType === 'Meccan' ? 'مكية' : 'مدنية'} - ${surah.numberOfAyahs} آيات</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            mainContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${surahCards}</div>`;
+            document.querySelectorAll('.surah-card').forEach(card => {
+                card.addEventListener('click', () => loadSurahDetail(card.dataset.surahNumber));
+            });
+             window.scrollTo(0, 0);
+        };
+        
+        const renderSurahDetail = () => {
+            const surah = state.selectedSurahData;
+            const reciterOptions = state.reciters.map(r => `<option value="${r.id}" ${r.id === state.editions.audio ? 'selected' : ''}>${r.name}</option>`).join('');
+
+            appHeader.innerHTML = `
+                <div class="flex flex-col md:flex-row items-center justify-between sticky top-0 bg-slate-50/80 backdrop-blur-sm py-4 z-10 -mx-4 px-4 border-b border-slate-200/80">
+                    <button id="back-button" class="flex-1 text-left flex items-center gap-2 text-green-600 hover:text-green-500 transition-colors mb-2 md:mb-0">
+                        ${ICONS.back}
+                        <span>كل السور</span>
+                    </button>
+                    <div class="flex-1 text-center order-first md:order-none mb-4 md:mb-0">
+                        <h1 class="text-3xl font-arabic text-slate-900">${surah.name}</h1>
+                        <p class="text-slate-500 text-sm">${surah.revelationType === 'Meccan' ? 'مكية' : 'مدنية'} - ${surah.ayahs.length} آيات</p>
+                    </div>
+                    <div class="flex-1 text-right flex items-center justify-end gap-2">
+                        <select id="reciter-select" class="bg-white border border-slate-300 rounded-md px-2 py-1 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-green-500">
+                            ${reciterOptions}
+                        </select>
+                         <button id="goto-ayah-btn" title="الذهاب إلى آية" class="p-2 rounded-full text-green-600 hover:bg-slate-200 transition-colors">
+                            ${ICONS.search}
+                        </button>
+                    </div>
+                </div>
+                <div id="goto-ayah-form-container" class="hidden sticky z-10 p-4 -mx-4 bg-slate-100/95 backdrop-blur-sm shadow-md">
+                    <form id="goto-ayah-form" class="flex gap-2">
+                        <input type="number" id="ayah-number-input" placeholder="رقم الآية" min="1" max="${surah.ayahs.length}" class="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">اذهب</button>
+                    </form>
+                </div>
+            `;
+            
+            const ayahCards = surah.ayahs.map(ayah => {
+                const ayahKey = `${surah.number}:${ayah.numberInSurah}`;
+                return `
+                    <div id="ayah-${ayah.numberInSurah}" data-ayah-number="${ayah.numberInSurah}" class="ayah-card bg-white rounded-lg p-5 mb-4 border-r-4 border-green-500/50 cursor-pointer hover:bg-slate-100 transition-colors shadow-sm">
+                        <div class="flex justify-between items-center mb-4">
+                            <span class="text-sm font-semibold bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                                الآية: ${ayah.numberInSurah}
+                            </span>
+                            <button data-ayah-key="${ayahKey}" data-audio-url="${ayah.audio}" class="play-toggle-btn p-2 rounded-full bg-slate-100 hover:bg-green-200 transition-colors text-slate-700 z-20 relative">
+                                ${state.playingAyahKey === ayahKey ? ICONS.pause : ICONS.play}
+                            </button>
+                        </div>
+                        <p class="text-3xl font-arabic leading-relaxed text-right text-slate-900 mb-4" dir="rtl">
+                            ${ayah.text}
+                        </p>
+                    </div>
+                `
+            }).join('');
+            
+            mainContent.innerHTML = `<div class="space-y-4 pt-4">${ayahCards}</div>`;
+
+            // --- EVENT LISTENERS FOR SURAH DETAIL VIEW ---
+            document.getElementById('back-button').addEventListener('click', loadSurahList);
+            document.getElementById('reciter-select').addEventListener('change', (e) => {
+                state.editions.audio = e.target.value;
+                loadSurahDetail(surah.number, true); // reload with new reciter
+            });
+            
+            const gotoAyahBtn = document.getElementById('goto-ayah-btn');
+            const gotoAyahFormContainer = document.getElementById('goto-ayah-form-container');
+            const gotoAyahForm = document.getElementById('goto-ayah-form');
+            const ayahNumberInput = document.getElementById('ayah-number-input');
+
+            const headerElement = appHeader.querySelector('.sticky');
+            if (headerElement) {
+                gotoAyahFormContainer.style.top = `${headerElement.offsetHeight}px`;
+            }
+
+            gotoAyahBtn.addEventListener('click', () => {
+                gotoAyahFormContainer.classList.toggle('hidden');
+                if (!gotoAyahFormContainer.classList.contains('hidden')) {
+                    ayahNumberInput.focus();
+                }
+            });
+
+            gotoAyahForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const ayahNumber = parseInt(ayahNumberInput.value, 10);
+                const maxAyahs = state.selectedSurahData.ayahs.length;
+
+                if (isNaN(ayahNumber) || ayahNumber < 1 || ayahNumber > maxAyahs) {
+                    alert(`الرجاء إدخال رقم آية صحيح بين 1 و ${maxAyahs}`);
+                    return;
+                }
+
+                const targetAyah = document.getElementById(`ayah-${ayahNumber}`);
+                if (targetAyah) {
+                    targetAyah.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    targetAyah.classList.add('highlight-ayah');
+                    setTimeout(() => {
+                        targetAyah.classList.remove('highlight-ayah');
+                    }, 2500);
+
+                    gotoAyahFormContainer.classList.add('hidden');
+                    ayahNumberInput.value = '';
+                }
+            });
+
+            document.querySelectorAll('.play-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                     e.stopPropagation(); 
+                     handlePlayToggle(e.currentTarget.dataset.audioUrl, e.currentTarget.dataset.ayahKey);
+                });
+            });
+            
+            document.querySelectorAll('.ayah-card').forEach(card => {
+                card.addEventListener('click', () => openModal(card.dataset.ayahNumber));
+            });
+        };
+        
+        // --- Modal Logic ---
+        const openModal = (ayahNumberInSurah) => {
+            state.currentAyahInModal = parseInt(ayahNumberInSurah, 10);
+            document.body.style.overflow = 'hidden';
+            modalContainer.classList.remove('hidden');
+            renderModalContent();
+        };
+
+        const closeModal = () => {
+            document.body.style.overflow = '';
+            modalContainer.classList.add('hidden');
+            modalContent.innerHTML = '';
+            state.currentAyahInModal = null;
+            if (state.playingAyahKey && state.playingAyahKey.startsWith('modal-')) {
+                 audioPlayer.pause();
+                 state.playingAyahKey = null;
+            }
+        };
+
+        const navigateToAyahInModal = (direction) => {
+            const newAyahNumber = state.currentAyahInModal + direction;
+            const surah = state.selectedSurahData;
+            if (newAyahNumber > 0 && newAyahNumber <= surah.ayahs.length) {
+                state.currentAyahInModal = newAyahNumber;
+                renderModalContent();
+            }
+        };
+
+        const renderModalContent = async () => {
+            const surah = state.selectedSurahData;
+            const ayah = surah.ayahs.find(a => a.numberInSurah === state.currentAyahInModal);
+            if (!ayah) return;
+            const ayahKey = `modal-${surah.number}:${ayah.numberInSurah}`;
+
+            modalContent.innerHTML = `<div class="p-6 text-center text-lg"><div class="animate-spin rounded-full h-8 w-8 mx-auto border-t-2 border-b-2 border-green-500"></div><p class="mt-2">جاري تحميل التفسير...</p></div>`;
+            const tafsirPromises = state.tafsirs.map(t => api.getTafsir(surah.number, ayah.numberInSurah, t.id));
+            const tafsirResults = await Promise.all(tafsirPromises);
+            
+            const shareText = encodeURIComponent(`"${ayah.text}" (القرآن الكريم ${surah.number}:${ayah.numberInSurah})`);
+            
+            const tafsirTabs = state.tafsirs.map((t, i) => `<button data-tafsir-id="${i}" class="tafsir-tab-btn px-4 py-2 text-sm font-medium text-slate-600 border-b-2 border-transparent hover:text-green-600 ${i === 0 ? 'active' : ''}">${t.name}</button>`).join('');
+            const tafsirContents = tafsirResults.map((text, i) => `<div id="tafsir-content-${i}" class="text-sm leading-loose ${i > 0 ? 'hidden' : ''}">${text}</div>`).join('');
+
+            modalContent.innerHTML = `
+                <div class="p-4 bg-slate-100 border-b border-slate-200 flex justify-between items-center sticky top-0 z-10">
+                    <h3 class="text-lg font-bold">الآية ${ayah.numberInSurah} من سورة ${surah.name}</h3>
+                    <button id="close-modal-btn" class="p-1 rounded-full hover:bg-slate-200">${ICONS.close}</button>
+                </div>
+                <div class="p-6 space-y-6">
+                    <p class="text-3xl font-arabic leading-relaxed text-center">${ayah.text}</p>
+                    
+                     <div class="grid grid-cols-2 gap-2 text-sm">
+                        <button id="copy-ayah-btn" class="bg-slate-200 rounded p-2 hover:bg-slate-300 transition-colors">نسخ الآية بالتشكيل</button>
+                        <button class="bg-green-100 text-green-800 rounded p-2 hover:bg-green-200 transition-colors">إضافة للمفضلة</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <button id="prev-ayah-btn" class="bg-slate-200 rounded p-2 hover:bg-slate-300 transition-colors flex items-center justify-center gap-2 ${state.currentAyahInModal === 1 ? 'opacity-50 cursor-not-allowed' : ''}" ${state.currentAyahInModal === 1 ? 'disabled' : ''}>&lt;&lt; الآية السابقة</button>
+                        <button id="next-ayah-btn" class="bg-slate-200 rounded p-2 hover:bg-slate-300 transition-colors flex items-center justify-center gap-2 ${state.currentAyahInModal === surah.ayahs.length ? 'opacity-50 cursor-not-allowed' : ''}" ${state.currentAyahInModal === surah.ayahs.length ? 'disabled' : ''}>الآية التالية &gt;&gt;</button>
+                    </div>
+
+                    <div class="flex justify-center items-center gap-3 py-2">
+                      <a href="https://www.facebook.com/sharer/sharer.php?u=https://quran.com/${surah.number}/${ayah.numberInSurah}&quote=${shareText}" target="_blank" class="w-8 h-8 opacity-70 hover:opacity-100">${ICONS.share.facebook}</a>
+                      <a href="https://twitter.com/intent/tweet?text=${shareText}" target="_blank" class="w-8 h-8 opacity-70 hover:opacity-100">${ICONS.share.x}</a>
+                      <a href="https://api.whatsapp.com/send?text=${shareText}" target="_blank" class="w-8 h-8 opacity-70 hover:opacity-100">${ICONS.share.whatsapp}</a>
+                      <a href="https://t.me/share/url?url=https://quran.com/${surah.number}/${ayah.numberInSurah}&text=${shareText}" target="_blank" class="w-8 h-8 opacity-70 hover:opacity-100">${ICONS.share.telegram}</a>
+                    </div>
+                    
+                    <div class="bg-slate-100 rounded-lg p-4">
+                        <h4 class="font-bold mb-3">الاستماع الى الآية</h4>
+                         <div class="flex items-center gap-2">
+                            <button id="modal-play-btn" data-audio-url="${ayah.audio}" data-ayah-key="${ayahKey}" class="play-toggle-btn p-2 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
+                                ${state.playingAyahKey === ayahKey ? ICONS.pause : ICONS.play}
+                            </button>
+                            <div class="w-full bg-slate-200 rounded-full h-1.5"><div id="modal-progress-bar" class="bg-green-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                             <a href="${ayah.audio}" download="ayah-${surah.number}-${ayah.numberInSurah}.mp3" title="تنزيل" class="p-2 rounded-full bg-slate-200 hover:bg-green-200 text-green-700 transition-colors">${ICONS.download}</a>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-100 rounded-lg p-4 text-right">
+                        <h4 class="font-bold mb-2 text-green-800">موضعها في القرآن الكريم</h4>
+                        <p class="text-sm">هي الآية رقم ${ayah.numberInSurah} من سورة ${surah.name}، تقع في الجزء رقم ${ayah.juz}، في الصفحة رقم ${ayah.page}.</p>
+                    </div>
+                    
+                    <div class="bg-slate-100 rounded-lg p-4 text-right">
+                         <h4 class="font-bold mb-2 text-green-800">تفسير الآية</h4>
+                         <div class="tafsir-tabs flex mb-2 -mx-4 px-4 border-b border-slate-200">${tafsirTabs}</div>
+                         <div id="tafsir-content-container">${tafsirContents}</div>
+                    </div>
+                </div>
+            `;
+            
+            // Add modal event listeners
+            document.getElementById('close-modal-btn').addEventListener('click', closeModal);
+            document.getElementById('prev-ayah-btn').addEventListener('click', () => navigateToAyahInModal(-1));
+            document.getElementById('next-ayah-btn').addEventListener('click', () => navigateToAyahInModal(1));
+            document.getElementById('modal-play-btn').addEventListener('click', (e) => {
+                 handlePlayToggle(e.currentTarget.dataset.audioUrl, e.currentTarget.dataset.ayahKey);
+            });
+            document.getElementById('copy-ayah-btn').addEventListener('click', () => {
+                navigator.clipboard.writeText(ayah.text)
+                  .then(() => {
+                      const btn = document.getElementById('copy-ayah-btn');
+                      btn.textContent = 'تم النسخ!';
+                      setTimeout(() => { btn.textContent = 'نسخ الآية بالتشكيل'; }, 2000);
+                  })
+                  .catch(() => alert('فشل النسخ.'));
+            });
+
+            document.querySelectorAll('.tafsir-tab-btn').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    const selectedId = e.currentTarget.dataset.tafsirId;
+                    document.querySelectorAll('.tafsir-tab-btn').forEach(t => t.classList.remove('active'));
+                    e.currentTarget.classList.add('active');
+                    document.querySelectorAll('#tafsir-content-container > div').forEach(content => content.classList.add('hidden'));
+                    document.getElementById(`tafsir-content-${selectedId}`).classList.remove('hidden');
+                });
+            });
+
+            audioPlayer.addEventListener('timeupdate', () => {
+                if(state.playingAyahKey === ayahKey) {
+                    const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
+                    const progressBar = document.getElementById('modal-progress-bar');
+                    if (progressBar) progressBar.style.width = `${progress}%`;
+                }
+            });
+             modalContent.scrollTop = 0; // scroll to top on new ayah
+        };
+
+        modalOverlay.addEventListener('click', closeModal);
+
+        // --- App Logic / Controllers ---
+        const loadSurahList = async () => {
+            state.selectedSurahData = null;
+            if (state.surahs.length === 0) {
+                showLoader(true);
+                try {
+                    state.surahs = await api.getAllSurahs();
+                    renderSurahList();
+                } catch (err) {
+                    showError(err.message);
+                } finally {
+                    showLoader(false);
+                }
+            } else {
+                 renderSurahList();
+                 showLoader(false);
+            }
+        };
+
+        const loadSurahDetail = async (surahNumber, isReload = false) => {
+            showLoader(true);
+            try {
+                const surahData = await api.getSurahDetail(surahNumber, state.editions.audio);
+                // If this is a reload (reciter change), we need to merge new audio data
+                if (isReload && state.selectedSurahData) {
+                    state.selectedSurahData.ayahs.forEach((ayah, index) => {
+                        ayah.audio = surahData.ayahs[index].audio;
+                    });
+                } else {
+                    state.selectedSurahData = surahData;
+                }
+                renderSurahDetail();
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                showLoader(false);
+            }
+            if(!isReload) window.scrollTo(0, 0);
+        };
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', loadSurahList);
+    </script>
+
+</body>
+</html>
